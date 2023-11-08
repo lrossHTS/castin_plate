@@ -20,7 +20,8 @@ check = 1
 devs = {'Level':10, 'Plan': 35, 'Perpindicular':35}
 
 # Fin plate arrangement
-fin_pl = {'D': 500, 't_pl': 10, 'n_bolts': 7, 'grade': 'S275', 'bolt_end_dist':40, 'f_y':275, 's': 8}
+fin_pl = {'D': 500, 't_pl': 10, 'n_bolts': 7, 'grade': 'S275', 'bolt_end_dist':40, 'f_y':275, 's': 8, 'gamma_m':1}
+fin_pl['Z'] = fin_pl['t_pl'] * fin_pl['D']**2 / 6
 
 # check shear / check tying resistance from P358 Table G.18
 
@@ -29,10 +30,10 @@ studs = {'d': 25, 'rows': 3, 'cols': 2, 's_row': 125, 's_cols': 130, 'f_u': 450,
 studs['n'] = studs['rows'] * studs['cols']
 
 # Reinforcement arrangement
-reo = {'dia': 25, 'grade': 'B500', 'n_top': 2, 'n_bot': 2, 'dim_top_fpl':40, 'f_y':500, 'gamma_s':1.15, 'horiz_spacing':155, 'dim_top_cpl':70}
+reo = {'dia': 25, 'grade': 'B500', 'n_top': 2, 'n_bot': 2, 'dim_top_fpl':40, 'f_y':500, 'gamma_s':1.15, 'horiz_spacing':155, 'dim_top_cpl':70, 'gamma_s_acc':1.0}
 
 # Castin plate
-castin_pl = {'t_pl': 25, 'grade': 'S355', 'f_y':345, 'width': 250, 'f_u': 470, 'gamma_m':1}
+castin_pl = {'t_pl': 25, 'grade': 'S355', 'f_y':345, 'width': 250, 'f_u': 470, 'gamma_m':1, 'gamma_mu':1.1}
 
 gamma_v = 1.25
 
@@ -171,10 +172,72 @@ M_plRd = 0.25 * l_eff * castin_pl['t_pl']**2 * castin_pl['f_y'] / (castin_pl['ga
 
 n = min(e_2, 1.25*m_)
 
-e = devs['Plan']
-
-# M_plRd + R_B * (n + m_ - e) - F_tRd * (m_ - e) = 0
+e = devs['Plan'] 
 
 R_B = (-M_plRd + F_tRd * (m_ - e)/1000) / ((n + m_ - e)/1000)
+
+print('Check {}: R_B of {} kN is negative, therefore no prying force on one edge of the plate. Mode 2 Failure does not occur'.format(check, round(R_B)))
+check += 1
+
+# take moments about end A (refer to SCIP416 example calc)
+
+b = reo['horiz_spacing']
+
+alpha_f = n / (n+b)
+
+F_T = (F_tRd * (alpha_f*n + (n+b))) / (n+(b/2+e))
+
+# check bending moment at the face of the fin plate is less than the castin plate resistance
+
+M = F_tRd * (m_-e)/1000
+
+print('Check {}: MplRd {} kNm vs M_Ed {} kNm'.format(check, round(M_plRd), round(M)))
+check += 1
+
+# Check mode 1 failure
+d_w = reo['dia']
+e_w = d_w/4
+
+F_RdT1A = ((4*n - e_w )*M_plRd*10**3) / (2*n*(m_-e) - e_w*((m_-e)+n))
+F_RdT1B = ((4*n - e_w )*M_plRd*10**3) / (2*n*(m_+e) - e_w*((m_+e)+n))
+
+F_RdT1 = F_RdT1A + F_RdT1B
+
+print('Check {}: Mode 1 Resistance {} kN is larger than F_T of {} kN, therefore Mode 1 is not critical'.format(check, round(F_RdT1), round(F_T)))
+check += 1
+
+# Check the cast-in pl under tying load 
+# Bar str in tying
+F_tUlt_bar = reo['dia']**2 * m.pi / 4 * reo['f_y'] / (reo['gamma_s_acc']*1000)
+
+# Sub bar str in tying into Mode 2 formula
+F_T_tying = (F_tUlt_bar * (alpha_f*n + (n+b))) / (n+(b/2+e))
+
+# Plate resistance using ult str
+M_plRd_ult = 0.25 * l_eff * castin_pl['t_pl']**2 * castin_pl['f_u'] / (castin_pl['gamma_mu'] * 1000**2)
+
+M_tie = F_tUlt_bar * (m_ -e)/1000
+
+print('Check {}: Plate tying resist {} kNm vs Plate in bending due to tying {} kNm'.format(check, round(M_plRd_ult), round(M_tie)))
+check += 1
+
+# RESISTANCE OF COMBINED CASTIN PLATE AND FIN PLATE TO BENDING IN VERTICAL PLANE
+# Nominal ecc moment 
+ecc = e_p - castin_pl['t_pl']
+
+# Ecc moment finplate
+M_ecc_fPl = M_ecc * ecc/e_p
+
+# Fin plate resistance
+M_Rd_fPl = fin_pl['f_y'] * fin_pl['Z'] / fin_pl['gamma_m'] *10**-6
+
+print('Check {}: Fin plate bending resist {} kNm vs bending due to ecc {} kNm'.format(check, round(M_Rd_fPl), round(M_ecc_fPl)))
+check += 1
+
+# Tying load case: 
+
+
+
+
 
 pass
