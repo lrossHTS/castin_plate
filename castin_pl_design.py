@@ -12,6 +12,11 @@ f_ck = 40 # MPa
 f_cm = f_ck + 8 # MPa
 E_cm = 22*(f_cm/10)**0.3 *1000 # MPa
 
+alpha_cc = 0.85
+gamma_c = 1.5
+
+f_cd = alpha_cc * f_ck / gamma_c
+
 wall_thickness = 250 # mm
 
 check = 1
@@ -20,7 +25,7 @@ check = 1
 devs = {'Level':10, 'Plan': 35, 'Perpindicular':35}
 
 # Fin plate arrangement
-fin_pl = {'D': 500, 't_pl': 10, 'n_bolts': 7, 'grade': 'S275', 'bolt_end_dist':40, 'f_y':275, 's': 8, 'gamma_m':1}
+fin_pl = {'D': 500, 't_pl': 10, 'n_bolts': 7, 'grade': 'S275', 'bolt_end_dist':40, 'f_y':275, 's': 8, 'gamma_m':1, 'min_L':100, 'f_u':410, 'gamma_mu':1.1}
 fin_pl['Z'] = fin_pl['t_pl'] * fin_pl['D']**2 / 6
 
 # check shear / check tying resistance from P358 Table G.18
@@ -28,9 +33,12 @@ fin_pl['Z'] = fin_pl['t_pl'] * fin_pl['D']**2 / 6
 # Shear stud arrangement
 studs = {'d': 25, 'rows': 3, 'cols': 2, 's_row': 125, 's_cols': 130, 'f_u': 450, 'h_sc': 100}
 studs['n'] = studs['rows'] * studs['cols']
+studs['A'] = studs['d']**2 * m.pi /4
 
 # Reinforcement arrangement
-reo = {'dia': 25, 'grade': 'B500', 'n_top': 2, 'n_bot': 2, 'dim_top_fpl':40, 'f_y':500, 'gamma_s':1.15, 'horiz_spacing':155, 'dim_top_cpl':70, 'gamma_s_acc':1.0}
+reo = {'dia': 25, 'grade': 'B500', 'n_top': 2, 'n_bot': 2, 'dim_top_fpl':40, 'dim_bot_fpl':40, 'f_y':500, 'gamma_s':1.15, 'horiz_spacing':155, 'dim_top_cpl':70, 'dim_bot_cpl':70, 'gamma_s_acc':1.0}
+reo['A'] = reo['dia']**2 * m.pi /4
+reo['n'] = reo['n_bot'] + reo['n_top']
 
 # Castin plate
 castin_pl = {'t_pl': 25, 'grade': 'S355', 'f_y':345, 'width': 250, 'f_u': 470, 'gamma_m':1, 'gamma_mu':1.1}
@@ -235,9 +243,72 @@ print('Check {}: Fin plate bending resist {} kNm vs bending due to ecc {} kNm'.f
 check += 1
 
 # Tying load case: 
+leverArm = fin_pl['D'] - reo['dim_bot_fpl'] - reo['dim_top_fpl']
 
+M_tying = F_tie * (leverArm/1000) / 8 # kNm
 
+# assessment of finplate + castinpl as Tee section. 
+flangeW_assumed = 100 # mm
 
+tee_area_assumed = castin_pl['t_pl']*flangeW_assumed + fin_pl['t_pl']*fin_pl['min_L']
+flange_area_assumed = flangeW_assumed * castin_pl['t_pl']
 
+print('Check {}: Flange area {} vs A/2 {} m2 - If A_flange is larger, neutral axis is in flange'.format(check, round(flange_area_assumed), round(tee_area_assumed/2)))
+check += 1
+
+dist_from_top_flange = tee_area_assumed/2 / flangeW_assumed
+
+# plastic modulus, taking area moments about neutral axis
+flange_1 = (flangeW_assumed * dist_from_top_flange) * dist_from_top_flange/2
+flange_2 = (flangeW_assumed * (castin_pl['t_pl']-dist_from_top_flange)) * ((castin_pl['t_pl']-dist_from_top_flange)/2)
+web = (fin_pl['t_pl'] * fin_pl['min_L']) * ((castin_pl['t_pl']-dist_from_top_flange) + fin_pl['min_L']/2)
+
+plast_mod_T = flange_1 + flange_2 + web
+
+M_R = fin_pl['f_u']/fin_pl['gamma_mu'] * plast_mod_T / 10**6
+
+print('Check {}: M_R {} kNm vs M_tying {} kNm'.format(check, round(M_R), round(M_tying)))
+check += 1
+
+# Bearing resistance of concrete at bottom of fin plate
+F_c = F_t # kN (comp at bottom of fin plate)
+
+# Vert dim for bearing (assuming 2.5:1 spread through castin pl)
+d_bearing = depth_req_finPl + 5*castin_pl['t_pl']
+w_bearing = fin_pl['t_pl'] + 2*fin_pl['s'] + 5*castin_pl['t_pl']
+
+F_Rdu = d_bearing * w_bearing * f_cd / gamma_c / 1000 #kN 
+
+print('Check {}: F_Rdu {} kN vs F_c,td {} kN'.format(check, round(F_Rdu), round(F_c)))
+check += 1
+
+#---------------------------------------------#
+# DETAILING OF REINFORCEMENT FOR ECC MOMENT
+alpha_ct = 1.0
+f_ctm = 0.3*f_ck**(2/3)
+f_ctk005 = 0.7 * f_ctm
+f_ctd = alpha_ct * f_ctk005 / gamma_c
+
+eta_1 = 0.7 # cannot show good bond conditions
+eta_2 = 1.0 # bar dia is less than 32 mm 
+
+f_bd = 2.25 * eta_1 * eta_2 * f_ctd
+
+# Bond length required
+l_breq = F_t / (f_bd * m.pi * reo['dia'])
+l_b = l_breq #ignore the numerous alpha factors
+
+# Bent bar geometry
+print('Check {}: Bent bar geometry check skipped, to be added later.'.format(check))
+check += 1
+
+# Reduced tension resist of reo in presence of shear
+V_Ebar = V_Ed/reo['n'] * (reo['n'] * reo['A'] / (studs['n']*studs['A'] + reo['n']*reo['A']))
+
+# Von mises failure criterion for uniaxial stress / shear stress
+F_tRdRed = (F_tRd**2 - 3*V_Ebar**2)**0.5
+
+print('Check {}: Reduced F_tRd {} kN vs F_tEd {} kN'.format(check, round(F_tRdRed), round(F_tEd)))
+check += 1
 
 pass
