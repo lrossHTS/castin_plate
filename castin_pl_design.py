@@ -1,12 +1,12 @@
 import math as m
 
 # Inputs
-V_Ed = 570
-F_tie = 500
+V_Ed = 570 # kN
+F_tie = 500 # kN
 
 beam = {'section':'610x305 UB 238', 'end_dist':5}
 
-min_gap = 10
+min_gap = 10 # mm
 
 f_ck = 40 # MPa
 f_cm = f_ck + 8 # MPa
@@ -25,7 +25,7 @@ check = 1
 devs = {'Level':10, 'Plan': 35, 'Perpindicular':35}
 
 # Fin plate arrangement
-fin_pl = {'D': 500, 't_pl': 10, 'n_bolts': 7, 'grade': 'S275', 'bolt_end_dist':40, 'f_y':275, 's': 8, 'gamma_m':1, 'min_L':100, 'f_u':410, 'gamma_mu':1.1}
+fin_pl = {'D': 500, 't_pl': 10, 'n_bolts': 7, 'grade': 'S275', 'bolt_end_dist':50, 'f_y':275, 's': 8, 'gamma_m':1, 'min_L':100, 'f_u':410, 'gamma_mu':1.1}
 fin_pl['Z'] = fin_pl['t_pl'] * fin_pl['D']**2 / 6
 
 # check shear / check tying resistance from P358 Table G.18
@@ -41,7 +41,7 @@ reo['A'] = reo['dia']**2 * m.pi /4
 reo['n'] = reo['n_bot'] + reo['n_top']
 
 # Castin plate
-castin_pl = {'t_pl': 25, 'grade': 'S355', 'f_y':345, 'width': 250, 'f_u': 470, 'gamma_m':1, 'gamma_mu':1.1}
+castin_pl = {'t_pl': 10, 'grade': 'S355', 'f_y':345, 'width': 250, 'f_u': 470, 'gamma_m':1, 'gamma_mu':1.1}
 
 gamma_v = 1.25
 
@@ -295,7 +295,7 @@ eta_2 = 1.0 # bar dia is less than 32 mm
 f_bd = 2.25 * eta_1 * eta_2 * f_ctd
 
 # Bond length required
-l_breq = F_t / (f_bd * m.pi * reo['dia'])
+l_breq = F_tRd*10**3 / (f_bd * m.pi * reo['dia'])
 l_b = l_breq #ignore the numerous alpha factors
 
 # Bent bar geometry
@@ -310,5 +310,29 @@ F_tRdRed = (F_tRd**2 - 3*V_Ebar**2)**0.5
 
 print('Check {}: Reduced F_tRd {} kN vs F_tEd {} kN'.format(check, round(F_tRdRed), round(F_tEd)))
 check += 1
+
+# DETAILING OF REINFORCEMENT FOR TYING ACTION 
+F_tie_bar = F_tie / reo['n']
+
+print('Check {}: F_tie per bar {} kN vs Ult tensile capacity per bar {} kN'.format(check, round(F_tUlt_bar), round(F_tie_bar)))
+check += 1
+
+# Bond strength
+gamma_c_acc = 1.2
+f_ctd_tying = alpha_ct * f_ctk005 / gamma_c_acc
+f_bd_tying = 2.25 * eta_1 * eta_2 * f_ctd_tying
+
+# Bond length to resist ult bar strength
+l_breq_tying = F_tUlt_bar*10**3 / (f_bd_tying * m.pi * reo['dia'])
+
+# WELDING REINFORCEMENT TO CASTIN PLATE
+# Design  str of weld
+f_u = castin_pl['f_u']
+beta_w = 0.9
+
+f_vwd = (f_u / (3**0.5)) / (beta_w * castin_pl['gamma_mu'])
+
+# Assume x2 welds provided
+a_req = F_tUlt_bar*10**3 / (2*f_vwd * m.pi * reo['dia'])
 
 pass
